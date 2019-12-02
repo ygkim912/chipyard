@@ -47,8 +47,21 @@ class WithBlockDeviceBridge extends RegisterBridgeBinder({
   case target: HasPeripheryBlockDeviceModuleImp => Seq(BlockDevBridge(target.bdev, target.reset.toBool)(target.p)) 
 })
 
+// Assign a unique name to each target memory space, consisting of one or more
+// memory channels. In the multi-node case, serial widgets can then disambiguate
+// each memory region using this string instead of relying on the assumption
+// the target has a single memory channel.
+object MemoryRegionNames {
+  var idx = -1
+  def getName(): String = {
+    idx += 1
+    s"memory_${idx}"
+  }
+}
+
 class WithFASEDBridge extends RegisterBridgeBinder({
   case t: CanHaveMasterAXI4MemPortModuleImp =>
+    val memoryRegionName = MemoryRegionNames.getName
     implicit val p = t.p
     (t.mem_axi4 zip t.outer.memAXI4Node).flatMap({ case (io, node) =>
       (io zip node.in).map({ case (axi4Bundle, (_, edge)) =>
@@ -56,7 +69,10 @@ class WithFASEDBridge extends RegisterBridgeBinder({
                                        axi4Bundle.ar.bits.addr.getWidth,
                                        axi4Bundle.ar.bits.id.getWidth)
         FASEDBridge(axi4Bundle, t.reset.toBool,
-          CompleteConfig(p(firesim.configs.MemModelKey), nastiKey, Some(AXI4EdgeSummary(edge))))
+          CompleteConfig(p(firesim.configs.MemModelKey),
+                         nastiKey,
+                         Some(AXI4EdgeSummary(edge)),
+                         Some(memoryRegionName)))
       })
     }).toSeq
 })
